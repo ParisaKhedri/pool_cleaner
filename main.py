@@ -1,4 +1,7 @@
+import math
 import time
+import heapq
+
 
 
 class Node:
@@ -90,15 +93,8 @@ def automate_text_message(message):
         time.sleep(0.01)
 
 
-def get_direction_of_cleaner(old_x, old_y, x, y):
+def get_direction_of_cleaner(direction, old_x, old_y, x, y):
     """
-    #not sure if this is needed
-
-    :param old_x:
-    :param old_y:
-    :param x:
-    :param y:
-    :return:
     """
     if old_y + 1 == y:
         y += 1  # N
@@ -110,11 +106,17 @@ def get_direction_of_cleaner(old_x, old_y, x, y):
     elif old_x - 1 == x:
         return "W"
     else:
-        return "POSITION NOT IN POLL"
+        return direction
 
 
-def move_along_movement_command(command, cleaner):
-    print("moving in manual")
+def valid_point(node, grid_nodes):
+    if node in grid_nodes:
+        return True
+    else:
+        return False
+
+
+def move_along_movement_command(command, cleaner, grid_nodes):
 
     # direction changes based on turns and current direction
     left_turns = {'N': 'W', 'W': 'S', 'S': 'E', 'E': 'N'}
@@ -139,12 +141,19 @@ def move_along_movement_command(command, cleaner):
                 y -= 1
             elif direction == 'W':
                 x -= 1
-        print("Cleaner currently moving: " + direction + " " + str(x) + " " + str(y))
-        time.sleep(0.01)
-    update_cleaner_state(cleaner, x, y, direction)
+        # ignoring command if out of bounderies
+        if valid_point((x, y), grid_nodes):
+            print("Cleaner currently moving: " + direction + " " + str(x) + " " + str(y))
+            time.sleep(0.01)
+            update_cleaner_state(cleaner, x, y, direction)
+        else:
+            print("skipping command out of bounderies of poll")
+            time.sleep(0.01)
+            continue
 
 
-def manual(new_cleaner, tiles):
+
+def manual(cleaner, tiles):
 
     message = ("Please enter desired movement for the cleaner, for example 'LAARA' where \n" +
                "'l:turn left, r:turn right,a: forward' the movement command can be as long as you want but \n" +
@@ -160,10 +169,98 @@ def manual(new_cleaner, tiles):
         if direction == "E":
             break
         elif direction == "H":
-            return return_home(tiles, new_cleaner.get_x(), new_cleaner.get_y())
+            grid_nodes = get_nodes(tiles)
+            return_home(cleaner, grid_nodes, (cleaner.get_x(), cleaner.get_y()))
         else:
-            move_along_movement_command(direction, new_cleaner)
+            grid_nodes = get_nodes(tiles)
+            move_along_movement_command(direction, cleaner, grid_nodes)
             direction = ""
+
+
+def return_home(cleaner, tiles, start_node):
+    goal_node = (0, 0)
+    path = astar(start_node, goal_node, tiles)
+    for node in path:
+        x = node[0]
+        y = node[1]
+        direction = get_direction_of_cleaner(cleaner.get_direction(), cleaner.get_x(), cleaner.get_y(), x, y)
+        update_cleaner_state(cleaner, node[0], node[1], direction)
+        print("Cleaner currently moving back home: " + direction + " " + str(x) + " " + str(y))
+        time.sleep(0.01)
+
+
+
+
+def heuristic(node, goal):
+    """Function calculates euclidean distance between the two points"""
+    return ((node[0] - goal[0]) ** 2 + (node[1] - goal[1]) ** 2) ** 0.5
+
+
+def get_neighbors(node, nodes):
+    """function getting the neighboring nodes of the current node"""
+    neighbors = []
+    for n in nodes:
+        if (n[0] == node[0] and abs(n[1] - node[1]) == 1) or (n[1] == node[1] and abs(n[0] - node[0]) == 1):
+            neighbors.append(n)
+    return neighbors
+
+
+def astar(start, goal, nodes):
+    """
+    A* search
+    """
+    # Initialize data structures
+    open_set = []
+    closed_set = set()
+    came_from = {}
+    g_score = {start: 0}
+    f_score = {start: heuristic(start, goal)}
+
+    # Add start node to open set
+    heapq.heappush(open_set, (f_score[start], start))
+
+    # Run A* search
+    while open_set:
+        current = heapq.heappop(open_set)[1]
+
+        # Check if goal node reached
+        if current == goal:
+            path = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            path.append(start)
+            return list(reversed(path))
+
+        # Add current node to closed set
+        closed_set.add(current)
+
+        # Explore neighboring nodes
+        for neighbor in get_neighbors(current, nodes):
+            if neighbor in closed_set:
+                continue
+            tentative_g_score = g_score[current] + 1
+            if neighbor not in [n[1] for n in open_set] or tentative_g_score < g_score[neighbor]:
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g_score
+                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal)
+                heapq.heappush(open_set, (f_score[neighbor], neighbor))
+
+    # No path found
+    return None
+
+
+def get_nodes(tiles):
+    """
+    function creating
+    """
+
+    grid_tiles = []
+
+    for rows in tiles:
+        for node in rows:
+            grid_tiles.append((node.get_x(), node.get_y()))
+    return grid_tiles
 
 
 def automat(cleaner, tiles):
@@ -197,60 +294,15 @@ def automat(cleaner, tiles):
 
         i+=1
 
-    grid_tiles = []
-
-    for rows in tiles:
-        row = []
-        for node in rows:
-            row.append((node.get_x(), node.get_y()))
-        grid_tiles.append(row)
-    start_x = cleaner.get_x()
-    start_y = cleaner.get_y()
-
-    path = return_home(grid_tiles, start_x, start_y)
-    print(path)
-
-
-
-def dfs(grid, visited, row, col, path):
-    # Check if the current node is within the grid boundaries and is not visited
-
-    if row >= 0 and row < len(grid) and col >= 0 and col < len(grid[0]) and not visited[row][col]:
-        # Mark the current node as visited
-        visited[row][col] = True
-        # Add the current node to the path
-        path.append((row, col))
-        # Check if the current node is (0, 0)
-        if row == 0 and col == 0:
-            return True
-        # Recursively explore the neighbors of the current node
-        if dfs(grid, visited, row-1, col, path) or dfs(grid, visited, row, col-1, path) or \
-                dfs(grid, visited, row+1, col, path) or dfs(grid, visited, row, col+1, path):
-            return True
-        # If no path to (0, 0) is found from the current node, remove it from the path and mark it as unvisited
-        path.pop()
-        visited[row][col] = False
-    return False
-
-
-def return_home(tiles, start_x, start_y):
-    # Initialize the visited matrix to False for all nodes in the grid
-    visited = [[False for _ in range(len(tiles[0]))] for _ in range(len(tiles))]
-    # Initialize the path with the starting node
-    path = [(start_x, start_y)]
-    # Run the depth-first search algorithm to find a path to (0, 0) from the starting node
-    dfs(tiles, visited, start_x, start_y, path)
-    # Return the path to (0, 0)
-    return path
+    print("cleaner done cleaning returning home (0,0)")
+    grid_tiles = get_nodes(tiles)
+    return_home(cleaner, grid_tiles, (cleaner.get_x(), cleaner.get_y()))
 
 
 def generate_pool_tiles(x, y):
     """
     this function generates a grid with nodes each node representing a 1 by 1 tile
     in the pool
-    :param x:
-    :param y:
-    :return:
     """
 
     tiles_list = []
@@ -266,7 +318,7 @@ def generate_pool_tiles(x, y):
     return tiles_list
 
 
-def main(new_cleaner):
+def main(cleaner):
     """
     the main function calling other functions of the program
     :return:
@@ -280,17 +332,6 @@ def main(new_cleaner):
 
     pool_tiles = generate_pool_tiles(x, y)
 
-    """
-    grid = ""
-    for rows in pool_tiles:
-        for node in rows:
-            grid += "(" + str(node.get_x()) + "," + str(node.get_y()) + ") "
-        grid += "\n"
-
-
-    print(grid)
-    """
-
     mode = ""
 
     while mode != "A" or mode != "M":
@@ -298,19 +339,23 @@ def main(new_cleaner):
                      "enter 'E' if you wish to exit the program: ")
         print(mode)
         if mode == "M":
-            manual(new_cleaner, pool_tiles)
+            manual(cleaner, pool_tiles)
             break
         elif mode == "A":
-            automat(new_cleaner, pool_tiles)
+            automat(cleaner, pool_tiles)
             break
         elif mode == "E":
             break
 
 
 if __name__ == '__main__':
-
     new_cleaner = Cleaner()
     main(new_cleaner)
+
+
+
+
+
 
 
 
